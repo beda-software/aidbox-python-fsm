@@ -1,2 +1,2 @@
-from .aidbox_fsm import add_fsm_operations
-from .fsm import FSM, FSMConditionError, FSMError, FSMImpossibleTransitionError, FSMPermissionError
+from .aidbox_fsm import add_fsm_operations, aidbox_fsm_middleware, aidbox_fsm_permission
+from .fsm import FSM, FSMError, FSMImpossibleTransitionError, FSMPermissionError

@@ -1,6 +1,12 @@
-from aiohttp import web
+import contextlib
+import functools
 
-from .fsm import FSMError, FSMPermissionError
+import jsonschema
+from aidbox_python_sdk.sdk import validate_request
+from aiohttp import web
+from fhirpy.base.exceptions import OperationOutcome
+
+from .fsm import FSMError, FSMImpossibleTransitionError, FSMPermissionError
 
 
 def add_fsm_operations(sdk, fsm, resource_type, state_attribute):
@@ -14,36 +20,35 @@ def add_fsm_operations(sdk, fsm, resource_type, state_attribute):
         [resource_type, {"name": "resource-id"}, "$apply-transition", {"name": "target-state"}],
     )
     async def apply_transition_op(_operation, request):
-        user = await get_user_with_roles(sdk, request)
-
         resource = await sdk.client.reference(
             resource_type, request["route-params"]["resource-id"]
         ).to_resource()
         source_state = resource[state_attribute]
         target_state = request["route-params"]["target-state"]
 
-        context = {"resource": resource, "user": user, "request": request}
+        context = {"resource": resource, "request": request}
 
         try:
             await fsm.apply_transition(change_state, context, source_state, target_state)
 
-            await resource.refresh()
-
             return web.json_response(resource)
+        except FSMImpossibleTransitionError:
+            raise OperationOutcome(
+                reason=f"Impossible transition from {source_state} to {target_state}"
+            )
         except FSMPermissionError:
-            return web.json_response({}, status=403)
-        except FSMError:
-            return web.json_response({}, status=422)
+            raise OperationOutcome(
+                reason=f"You don't have permissions to make transition from {source_state} to {target_state}",
+                code="security",
+            )
 
     @sdk.operation(["GET"], [resource_type, {"name": "resource-id"}, "$get-transitions"])
     async def get_transitions_op(_operation, request):
-        user = await get_user_with_roles(sdk, request)
-
         resource = await sdk.client.reference(
             resource_type, request["route-params"]["resource-id"]
         ).to_resource()
         source_state = resource[state_attribute]
-        context = {"resource": resource, "user": user}
+        context = {"resource": resource, "request": request}
 
         transitions = [
             target_state for target_state in await fsm.get_transitions(context, source_state)
@@ -52,9 +57,37 @@ def add_fsm_operations(sdk, fsm, resource_type, state_attribute):
         return web.json_response({"sourceState": source_state, "transitions": transitions})
 
 
-async def get_user_with_roles(sdk, request):
-    user = sdk.client.resource("User", **request["oauth/user"])
-    roles = await sdk.client.resources("Role").search(user=user).fetch_all()
-    user["role"] = roles
+def aidbox_fsm_middleware(_fn=None, *, request_schema=None):
+    request_validator = None
+    if request_schema:
+        request_validator = jsonschema.Draft202012Validator(schema=request_schema)
 
-    return user
+    def wrapper(fn):
+        @functools.wraps(fn)
+        def wrapped_middleware(context):
+            context = context.copy()
+            request = context.pop("request")
+            resource = context.pop("resource")
+
+            if request_validator:
+                validate_request(request_validator, request)
+
+            return contextlib.asynccontextmanager(fn)(resource, request, context)
+
+        return wrapped_middleware
+
+    if _fn is None:
+        return wrapper
+    else:
+        return wrapper(_fn)
+
+
+def aidbox_fsm_permission(fn):
+    @functools.wraps(fn)
+    async def wrapped_permission(context):
+        context = context.copy()
+        request = context.pop("request")
+        resource = context.pop("resource")
+        return await fn(resource, request, context)
+
+    return wrapped_permission

@@ -16,10 +16,6 @@ class FSMPermissionError(FSMError):
     pass
 
 
-class FSMConditionError(FSMError):
-    pass
-
-
 class TransitionType(typing.TypedDict):
     context: typing_extensions.NotRequired[typing.Any]
     permissions: typing_extensions.NotRequired[
