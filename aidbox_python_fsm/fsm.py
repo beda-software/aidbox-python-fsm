@@ -5,8 +5,13 @@ import typing_extensions
 
 
 class FSMError(Exception):
-    pass
+    source_state = None
+    target_state = None
 
+    def __init__(self, source_state, target_state) -> None:
+        self.source_state = source_state
+        self.target_state = target_state
+        super().__init__()
 
 class FSMImpossibleTransitionError(FSMError):
     pass
