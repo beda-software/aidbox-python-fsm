@@ -3,12 +3,7 @@ import typing
 
 import pytest
 
-from aidbox_python_fsm import (
-    FSM,
-    FSMConditionError,
-    FSMImpossibleTransitionError,
-    FSMPermissionError,
-)
+from aidbox_python_fsm import FSM, FSMImpossibleTransitionError, FSMPermissionError
 
 state = {"current": {}}
 
@@ -56,11 +51,15 @@ async def completed_middleware(context):
     update_state({"middleware": {"after": True, "context": context}})
 
 
+class MyException(Exception):
+    pass
+
+
 @contextlib.asynccontextmanager
 async def precheck_failed_middleware(context):
     update_state({"middleware": {"before": True, "context": context}})
 
-    raise FSMConditionError()
+    raise MyException()
     yield
     set_state({"middleware": {"after": True}})
 
@@ -95,6 +94,29 @@ async def test_get_transitions():
     assert await fsm.get_transitions({}, "precheck-failed") == []
 
 
+async def test_apply_transition_with_ignoring_permissions():
+    async def change_state(context, source_state, target_state):
+        update_state(
+            {
+                "change_state": {
+                    "context": context,
+                    "source_state": source_state,
+                    "target_state": target_state,
+                },
+            }
+        )
+
+    reset_state()
+    await fsm.apply_transition(change_state, {}, "initial", "impossible", ignore_permissions=True)
+    assert state["current"] == {
+        "change_state": {
+            "context": {},
+            "source_state": "initial",
+            "target_state": "impossible",
+        }
+    }
+
+
 async def test_apply_transition():
     async def change_state(context, source_state, target_state):
         update_state(
@@ -118,7 +140,7 @@ async def test_apply_transition():
     assert state["current"] == {}
 
     reset_state()
-    with pytest.raises(FSMConditionError):
+    with pytest.raises(MyException):
         await fsm.apply_transition(change_state, {"main": "main"}, "initial", "precheck-failed")
     assert state["current"] == {"middleware": {"before": True, "context": {"main": "main"}}}
 
@@ -136,4 +158,3 @@ async def test_apply_transition():
             "context": {"custom": "custom", "main": "main"},
         },
     }
-

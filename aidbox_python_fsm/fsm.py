@@ -39,13 +39,16 @@ class FSM:
 
         return True
 
-    async def get_transitions(self, context: typing.Any, source_state: str):
+    async def get_transitions(
+        self, context: typing.Any, source_state: str, *, ignore_permissions=False
+    ):
         available_transitions = []
 
         for target_state, transition in self.transitions.get(source_state, {}).items():
-            extended_context = {**context, **transition.get("context", {})}
-            if not await self._check_permissions(transition, extended_context):
-                continue
+            if not ignore_permissions:
+                extended_context = {**context, **transition.get("context", {})}
+                if not await self._check_permissions(transition, extended_context):
+                    continue
 
             available_transitions.append(target_state)
         return available_transitions
@@ -56,6 +59,8 @@ class FSM:
         context: typing.Any,
         source_state: str,
         target_state: str,
+        *,
+        ignore_permissions=False,
     ):
         available_transitions = self.transitions.get(source_state, {})
 
@@ -66,8 +71,9 @@ class FSM:
 
         extended_context = {**context, **transition.get("context", {})}
 
-        if not await self._check_permissions(transition, extended_context):
-            raise FSMPermissionError()
+        if not ignore_permissions:
+            if not await self._check_permissions(transition, extended_context):
+                raise FSMPermissionError()
 
         async with AsyncExitStack() as stack:
             for middleware in transition.get("middlewares", []):

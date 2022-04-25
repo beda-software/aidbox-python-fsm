@@ -22,7 +22,7 @@ gunicorn = "==19.9.0"
 aiohttp = "==3.7.4"
 aiocontextvars = "==0.2.2"
 coloredlogs = "==10.0"
-aidbox-python-sdk = {git = "https://github.com/Aidbox/aidbox-python-sdk.git",ref = "837127c96a6d22cb30670142a44b17cd5e635e39"}
+aidbox-python-sdk = {git = "https://github.com/Aidbox/aidbox-python-sdk.git",ref = "4b21713e4437f80d2494755418347c09ccd539d6"}
 fhirpy = "*"
 aidboxpy = "*"
 pytest-aiohttp = "==0.3.0"
@@ -30,7 +30,7 @@ pytest-cov = "==2.8.1"
 pytest = "==5.3.1"
 pytest-mock = "==2.0.0"
 sqlalchemy = "*"
-
+jsonschema = "==4.4.0"
 
 [requires]
 python_version = "3.9"

@@ -9,29 +9,19 @@ from fhirpy.base.exceptions import OperationOutcome
 from .fsm import FSMError, FSMImpossibleTransitionError, FSMPermissionError
 
 
-def add_fsm_operations(sdk, fsm, resource_type, state_attribute):
-    async def change_state(context, _source_state, target_state):
-        resource = context["resource"]
-        resource[state_attribute] = target_state
-        await resource.save()
-
-    @sdk.operation(
-        ["POST"],
-        [resource_type, {"name": "resource-id"}, "$apply-transition", {"name": "target-state"}],
-    )
-    async def apply_transition_op(_operation, request):
-        resource = await sdk.client.reference(
-            resource_type, request["route-params"]["resource-id"]
-        ).to_resource()
-        source_state = resource[state_attribute]
-        target_state = request["route-params"]["target-state"]
-
+def add_fsm_operations(sdk, fsm, resource_type, get_state, set_state):
+    async def apply_transition(resource, target_state, request, ignore_permissions=False):
         context = {"resource": resource, "request": request}
+        source_state = await get_state(context)
 
         try:
-            await fsm.apply_transition(change_state, context, source_state, target_state)
-
-            return web.json_response(resource)
+            await fsm.apply_transition(
+                set_state,
+                context,
+                source_state,
+                target_state,
+                ignore_permissions=ignore_permissions,
+            )
         except FSMImpossibleTransitionError:
             raise OperationOutcome(
                 reason=f"Impossible transition from {source_state} to {target_state}"
@@ -42,19 +32,41 @@ def add_fsm_operations(sdk, fsm, resource_type, state_attribute):
                 code="security",
             )
 
+    async def get_transitions(resource, request, ignore_permissions=False):
+        context = {"resource": resource, "request": request}
+        source_state = await get_state(context)
+
+        transitions = await fsm.get_transitions(
+            context, source_state, ignore_permissions=ignore_permissions
+        )
+        return source_state, transitions
+
+    @sdk.operation(
+        ["POST"],
+        [resource_type, {"name": "resource-id"}, "$apply-transition", {"name": "target-state"}],
+    )
+    async def apply_transition_op(_operation, request):
+        resource = await sdk.client.reference(
+            resource_type, request["route-params"]["resource-id"]
+        ).to_resource()
+
+        target_state = request["route-params"]["target-state"]
+
+        await apply_transition(resource, target_state, request)
+
+        return web.json_response({})
+
     @sdk.operation(["GET"], [resource_type, {"name": "resource-id"}, "$get-transitions"])
     async def get_transitions_op(_operation, request):
         resource = await sdk.client.reference(
             resource_type, request["route-params"]["resource-id"]
         ).to_resource()
-        source_state = resource[state_attribute]
-        context = {"resource": resource, "request": request}
 
-        transitions = [
-            target_state for target_state in await fsm.get_transitions(context, source_state)
-        ]
+        source_state, transitions = await get_transitions(resource, request)
 
         return web.json_response({"sourceState": source_state, "transitions": transitions})
+
+    return apply_transition, get_transitions
 
 
 def aidbox_fsm_middleware(_fn=None, *, request_schema=None):
