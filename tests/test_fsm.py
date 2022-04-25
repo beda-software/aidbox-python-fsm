@@ -87,6 +87,17 @@ fsm = FSM(
 )
 
 
+async def test_get_transitions_with_ignoring_permissions():
+    assert await fsm.get_transitions({}, "initial", ignore_permissions=True) == [
+        "completed",
+        "precheck-failed",
+        "impossible",
+    ]
+    assert await fsm.get_transitions({}, "impossible", ignore_permissions=True) == []
+    assert await fsm.get_transitions({}, "completed", ignore_permissions=True) == []
+    assert await fsm.get_transitions({}, "precheck-failed", ignore_permissions=True) == []
+
+
 async def test_get_transitions():
     assert await fsm.get_transitions({}, "initial") == ["completed", "precheck-failed"]
     assert await fsm.get_transitions({}, "impossible") == []
