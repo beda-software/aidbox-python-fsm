@@ -2,7 +2,6 @@ import contextlib
 import functools
 
 import jsonschema
-from aidbox_python_sdk.sdk import validate_request
 from aiohttp import web
 from fhirpy.base.exceptions import OperationOutcome
 
@@ -10,8 +9,10 @@ from .fsm import FSMImpossibleTransitionError, FSMPermissionError
 
 
 def init_aidbox_fsm(fsm, get_state, set_state):
-    async def apply_transition(resource, request, target_state, *, check_permission=True):
-        context = {"resource": resource, "request": request}
+    async def apply_transition(
+        resource, data, target_state, *, context=None, check_permission=True
+    ):
+        context = {"resource": resource, "data": data, **(context or {})}
         source_state = await get_state(context)
 
         await fsm.apply_transition(
@@ -21,9 +22,9 @@ def init_aidbox_fsm(fsm, get_state, set_state):
             target_state,
             check_permission=check_permission,
         )
-        
-    async def get_transitions(resource, request, *, check_permission=True):
-        context = {"resource": resource, "request": request}
+
+    async def get_transitions(resource, *, context={}, check_permission=True):
+        context = {"resource": resource, **(context or {})}
         source_state = await get_state(context)
 
         transitions = await fsm.get_transitions(
@@ -44,10 +45,11 @@ def add_aidbox_fsm_operations(sdk, resource_type, apply_transition, get_transiti
         resource = await sdk.client.reference(
             resource_type, request["route-params"]["resource-id"]
         ).to_resource()
+        data = request.get("resource") or {}
 
         target_state = request["route-params"]["target-state"]
         try:
-            await apply_transition(resource, request, target_state)
+            await apply_transition(resource, data, target_state, context={"request": request})
         except FSMImpossibleTransitionError as exc:
             raise OperationOutcome(
                 reason=f"Impossible transition from {exc.source_state} to {exc.target_state}"
@@ -66,27 +68,27 @@ def add_aidbox_fsm_operations(sdk, resource_type, apply_transition, get_transiti
             resource_type, request["route-params"]["resource-id"]
         ).to_resource()
 
-        source_state, transitions = await get_transitions(resource, request)
+        source_state, transitions = await get_transitions(resource, context={"request": request})
 
         return web.json_response({"sourceState": source_state, "transitions": transitions})
 
 
-def aidbox_fsm_middleware(_fn=None, *, request_schema=None):
-    request_validator = None
-    if request_schema:
-        request_validator = jsonschema.Draft202012Validator(schema=request_schema)
+def aidbox_fsm_middleware(_fn=None, *, data_schema=None):
+    data_validator = None
+    if data_schema:
+        data_validator = jsonschema.Draft202012Validator(schema=data_schema)
 
     def wrapper(fn):
         @functools.wraps(fn)
         def wrapped_middleware(context):
             context = context.copy()
-            request = context.pop("request")
             resource = context.pop("resource")
+            data = context.pop("data")
 
-            if request_validator:
-                validate_request(request_validator, request)
+            if data_validator:
+                validate_data(data_validator, data)
 
-            return contextlib.asynccontextmanager(fn)(resource, request, context)
+            return contextlib.asynccontextmanager(fn)(resource, data, context)
 
         return wrapped_middleware
 
@@ -100,8 +102,32 @@ def aidbox_fsm_permission(fn):
     @functools.wraps(fn)
     async def wrapped_permission(context):
         context = context.copy()
-        request = context.pop("request")
         resource = context.pop("resource")
-        return await fn(resource, request, context)
+        return await fn(resource, context)
 
     return wrapped_permission
+
+
+def validate_data(data_validator, data):
+    errors = list(data_validator.iter_errors(data))
+    
+    if errors:
+        raise OperationOutcome(
+            resource={
+                "resourceType": "OperationOutcome",
+
+                "text": {
+                    "status": "generated",
+                    "div": "Invalid input data"
+                },
+                "issue": [
+                    {
+                        "severity": "fatal",
+                        "code": "invalid",
+                        "expression": [".".join([str(x) for x in ve.absolute_path])],
+                        "diagnostics": ve.message,
+                    }
+                    for ve in errors
+                ]
+            }
+        )
