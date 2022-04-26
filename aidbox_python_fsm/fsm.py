@@ -13,6 +13,7 @@ class FSMError(Exception):
         self.target_state = target_state
         super().__init__()
 
+
 class FSMImpossibleTransitionError(FSMError):
     pass
 
@@ -23,8 +24,8 @@ class FSMPermissionError(FSMError):
 
 class TransitionType(typing.TypedDict):
     context: typing_extensions.NotRequired[typing.Any]
-    permissions: typing_extensions.NotRequired[
-        typing.List[typing.Callable[[typing.Any], typing.Coroutine[typing.Any, typing.Any, bool]]]
+    permission: typing_extensions.NotRequired[
+        typing.Callable[[typing.Any], typing.Coroutine[typing.Any, typing.Any, bool]]
     ]
     middlewares: typing_extensions.NotRequired[
         typing.List[typing.Callable[[typing.Any], typing.AsyncContextManager]]
@@ -37,26 +38,30 @@ class FSM:
     def __init__(self, transitions: dict[str, dict[str, TransitionType]]):
         self.transitions = transitions
 
-    async def _check_permissions(self, transition: TransitionType, context: typing.Any):
-        for permission in transition.get("permissions", []):
-            if not await permission(context):
-                return False
+    async def _check_permission(self, transition: TransitionType, context: typing.Any):
+        permission = transition.get("permission")
+        if not permission:
+            return True
 
-        return True
+        return await permission(context)
 
     async def get_transitions(
-        self, context: typing.Any, source_state: str, *, ignore_permissions=False
+        self, context: typing.Any, source_state: str, *, check_permission=True
     ):
-        available_transitions = []
+        all_transitions = self.transitions.get(source_state, {})
 
-        for target_state, transition in self.transitions.get(source_state, {}).items():
-            if not ignore_permissions:
+        if check_permission:
+            available_states = []
+
+            for target_state, transition in all_transitions.items():
                 extended_context = {**context, **transition.get("context", {})}
-                if not await self._check_permissions(transition, extended_context):
+                if not await self._check_permission(transition, extended_context):
                     continue
 
-            available_transitions.append(target_state)
-        return available_transitions
+                available_states.append(target_state)
+            return available_states
+        else:
+            return list(all_transitions.keys())
 
     async def apply_transition(
         self,
@@ -65,20 +70,20 @@ class FSM:
         source_state: str,
         target_state: str,
         *,
-        ignore_permissions=False,
+        check_permission=True,
     ):
-        available_transitions = self.transitions.get(source_state, {})
+        all_transitions = self.transitions.get(source_state, {})
 
         try:
-            transition = available_transitions[target_state]
+            transition = all_transitions[target_state]
         except KeyError:
-            raise FSMImpossibleTransitionError()
+            raise FSMImpossibleTransitionError(source_state=source_state, target_state=target_state)
 
         extended_context = {**context, **transition.get("context", {})}
 
-        if not ignore_permissions:
-            if not await self._check_permissions(transition, extended_context):
-                raise FSMPermissionError()
+        if check_permission:
+            if not await self._check_permission(transition, extended_context):
+                raise FSMPermissionError(source_state=source_state, target_state=target_state)
 
         async with AsyncExitStack() as stack:
             for middleware in transition.get("middlewares", []):

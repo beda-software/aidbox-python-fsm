@@ -10,7 +10,7 @@ from .fsm import FSMImpossibleTransitionError, FSMPermissionError
 
 
 def init_aidbox_fsm(fsm, get_state, set_state):
-    async def apply_transition(resource, request, target_state, ignore_permissions=False):
+    async def apply_transition(resource, request, target_state, *, check_permission=True):
         context = {"resource": resource, "request": request}
         source_state = await get_state(context)
 
@@ -19,15 +19,15 @@ def init_aidbox_fsm(fsm, get_state, set_state):
             context,
             source_state,
             target_state,
-            ignore_permissions=ignore_permissions,
+            check_permission=check_permission,
         )
         
-    async def get_transitions(resource, request, ignore_permissions=False):
+    async def get_transitions(resource, request, *, check_permission=True):
         context = {"resource": resource, "request": request}
         source_state = await get_state(context)
 
         transitions = await fsm.get_transitions(
-            context, source_state, ignore_permissions=ignore_permissions
+            context, source_state, check_permission=check_permission
         )
 
         return source_state, transitions

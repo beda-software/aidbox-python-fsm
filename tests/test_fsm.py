@@ -71,14 +71,14 @@ fsm = FSM(
     {
         "initial": {
             "completed": {
-                "permissions": [always_true],
+                "permission": always_true,
                 "middlewares": [completed_middleware],
                 "context": {"custom": "custom"},
             },
             "precheck-failed": {
                 "middlewares": [precheck_failed_middleware],
             },
-            "impossible": {"permissions": [always_false]},
+            "impossible": {"permission": always_false},
         },
         "precheck-failed": {},
         "impossible": {},
@@ -87,15 +87,15 @@ fsm = FSM(
 )
 
 
-async def test_get_transitions_with_ignoring_permissions():
-    assert await fsm.get_transitions({}, "initial", ignore_permissions=True) == [
+async def test_get_transitions_without_cheking_permission():
+    assert await fsm.get_transitions({}, "initial", check_permission=False) == [
         "completed",
         "precheck-failed",
         "impossible",
     ]
-    assert await fsm.get_transitions({}, "impossible", ignore_permissions=True) == []
-    assert await fsm.get_transitions({}, "completed", ignore_permissions=True) == []
-    assert await fsm.get_transitions({}, "precheck-failed", ignore_permissions=True) == []
+    assert await fsm.get_transitions({}, "impossible", check_permission=False) == []
+    assert await fsm.get_transitions({}, "completed", check_permission=False) == []
+    assert await fsm.get_transitions({}, "precheck-failed", check_permission=False) == []
 
 
 async def test_get_transitions():
@@ -105,7 +105,7 @@ async def test_get_transitions():
     assert await fsm.get_transitions({}, "precheck-failed") == []
 
 
-async def test_apply_transition_with_ignoring_permissions():
+async def test_apply_transition_without_cheking_permission():
     async def change_state(context, source_state, target_state):
         update_state(
             {
@@ -118,7 +118,7 @@ async def test_apply_transition_with_ignoring_permissions():
         )
 
     reset_state()
-    await fsm.apply_transition(change_state, {}, "initial", "impossible", ignore_permissions=True)
+    await fsm.apply_transition(change_state, {}, "initial", "impossible", check_permission=False)
     assert state["current"] == {
         "change_state": {
             "context": {},
