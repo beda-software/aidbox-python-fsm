@@ -6,13 +6,15 @@ import jsonschema
 from aiohttp import web
 from fhirpy.base.exceptions import OperationOutcome
 
-from .fsm import FSM, FSMImpossibleTransitionError, FSMPermissionError
+from .fsm import FSM, FSMImpossibleTransitionError, FSMPermission, FSMPermissionError, FSMMiddleware
 
 
 def init_aidbox_fsm(
     fsm: FSM,
     get_state: typing.Callable[[typing.Any], typing.Coroutine[typing.Any, typing.Any, str]],
-    set_state: typing.Callable[[typing.Any, str], typing.Coroutine[typing.Any, typing.Any, typing.Any]],
+    set_state: typing.Callable[
+        [typing.Any, str], typing.Coroutine[typing.Any, typing.Any, typing.Any]
+    ],
 ):
     async def apply_transition(
         resource, data, target_state, *, context=None, check_permission=True
@@ -77,8 +79,13 @@ def add_aidbox_fsm_operations(sdk, resource_type, apply_transition, get_transiti
 
         return web.json_response({"sourceState": source_state, "transitions": transitions})
 
+@typing.overload
+def aidbox_fsm_middleware(_fn, *, data_schema=None) -> FSMMiddleware: ...
 
-def aidbox_fsm_middleware(_fn=None, *, data_schema=None):
+@typing.overload
+def aidbox_fsm_middleware(_fn: None=None, *, data_schema=None) -> typing.Callable[[typing.Any], FSMMiddleware]: ...
+
+def aidbox_fsm_middleware(_fn=None, *, data_schema=None) -> typing.Union[FSMMiddleware, typing.Callable[[typing.Any], FSMMiddleware]]:
     data_validator = None
     if data_schema:
         data_validator = jsonschema.Draft202012Validator(schema=data_schema)
@@ -103,7 +110,7 @@ def aidbox_fsm_middleware(_fn=None, *, data_schema=None):
         return wrapper(_fn)
 
 
-def aidbox_fsm_permission(fn):
+def aidbox_fsm_permission(fn) -> FSMPermission:
     @functools.wraps(fn)
     async def wrapped_permission(context):
         context = context.copy()

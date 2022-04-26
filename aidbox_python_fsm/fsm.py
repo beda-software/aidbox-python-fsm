@@ -22,14 +22,13 @@ class FSMPermissionError(FSMError):
     pass
 
 
+FSMMiddleware = typing.Callable[[typing.Any], typing.AsyncContextManager]
+FSMPermission = typing.Callable[[typing.Any], typing.Coroutine[typing.Any, typing.Any, bool]]
+
 class TransitionType(typing.TypedDict):
     context: typing_extensions.NotRequired[typing.Any]
-    permission: typing_extensions.NotRequired[
-        typing.Callable[[typing.Any], typing.Coroutine[typing.Any, typing.Any, bool]]
-    ]
-    middlewares: typing_extensions.NotRequired[
-        typing.List[typing.Callable[[typing.Any], typing.AsyncContextManager]]
-    ]
+    permission: typing_extensions.NotRequired[FSMPermission]
+    middlewares: typing_extensions.NotRequired[typing.List[FSMMiddleware]]
 
 
 class FSM:
