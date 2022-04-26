@@ -23,6 +23,7 @@ aiohttp = "==3.7.4"
 aiocontextvars = "==0.2.2"
 coloredlogs = "==10.0"
 aidbox-python-sdk = {git = "https://github.com/Aidbox/aidbox-python-sdk.git",ref = "4b21713e4437f80d2494755418347c09ccd539d6"}
+typing-extensions = "==4.2.0"
 fhirpy = "*"
 aidboxpy = "*"
 pytest-aiohttp = "==0.3.0"
