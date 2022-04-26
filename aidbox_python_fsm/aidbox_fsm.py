@@ -1,22 +1,27 @@
 import contextlib
 import functools
+import typing
 
 import jsonschema
 from aiohttp import web
 from fhirpy.base.exceptions import OperationOutcome
 
-from .fsm import FSMImpossibleTransitionError, FSMPermissionError
+from .fsm import FSM, FSMImpossibleTransitionError, FSMPermissionError
 
 
-def init_aidbox_fsm(fsm, get_state, set_state):
+def init_aidbox_fsm(
+    fsm: FSM,
+    get_state: typing.Callable[[typing.Any], typing.Coroutine[typing.Any, typing.Any, str]],
+    set_state: typing.Callable[[typing.Any, str], typing.Coroutine[typing.Any, typing.Any, typing.Any]],
+):
     async def apply_transition(
         resource, data, target_state, *, context=None, check_permission=True
     ):
         context = {"resource": resource, "data": data, **(context or {})}
-        source_state = await get_state(context)
+        source_state = await get_state(resource)
 
         await fsm.apply_transition(
-            set_state,
+            lambda *_args: set_state(resource, target_state),
             context,
             source_state,
             target_state,
@@ -25,7 +30,7 @@ def init_aidbox_fsm(fsm, get_state, set_state):
 
     async def get_transitions(resource, *, context={}, check_permission=True):
         context = {"resource": resource, **(context or {})}
-        source_state = await get_state(context)
+        source_state = await get_state(resource)
 
         transitions = await fsm.get_transitions(
             context, source_state, check_permission=check_permission
@@ -110,16 +115,12 @@ def aidbox_fsm_permission(fn):
 
 def validate_data(data_validator, data):
     errors = list(data_validator.iter_errors(data))
-    
+
     if errors:
         raise OperationOutcome(
             resource={
                 "resourceType": "OperationOutcome",
-
-                "text": {
-                    "status": "generated",
-                    "div": "Invalid input data"
-                },
+                "text": {"status": "generated", "div": "Invalid input data"},
                 "issue": [
                     {
                         "severity": "fatal",
@@ -128,6 +129,6 @@ def validate_data(data_validator, data):
                         "diagnostics": ve.message,
                     }
                     for ve in errors
-                ]
+                ],
             }
         )
