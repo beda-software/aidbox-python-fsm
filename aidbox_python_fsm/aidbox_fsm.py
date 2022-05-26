@@ -13,7 +13,7 @@ def init_aidbox_fsm(
     fsm: FSM,
     get_state: typing.Callable[[typing.Any], typing.Coroutine[typing.Any, typing.Any, str]],
     set_state: typing.Callable[
-        [typing.Any, str], typing.Coroutine[typing.Any, typing.Any, typing.Any]
+        [typing.Any, str, str], typing.Coroutine[typing.Any, typing.Any, typing.Any]
     ],
 ):
     async def apply_transition(
@@ -23,7 +23,7 @@ def init_aidbox_fsm(
         source_state = await get_state(resource)
 
         await fsm.apply_transition(
-            lambda *_args: set_state(resource, target_state),
+            lambda *_args: set_state(resource, source_state, target_state),
             context,
             source_state,
             target_state,
